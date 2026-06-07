@@ -1,0 +1,155 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Agira Full-Stack Docker Compose
+# Usage:
+#   Local dev:     docker compose up
+#   Production:    docker compose -f docker-compose.yml -p agira up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Agira Python Backend (Orchestrator + Sandbox) ──────────────────────────
+  # This container handles all code analysis, patching, and validation.
+  # It is spawned by the Next.js API routes via the jobs directory.
+  agira-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: agira/backend:${IMAGE_TAG:-latest}
+    container_name: agira-backend
+    restart: unless-stopped
+    volumes:
+      # Jobs directory — shared with Next.js API routes
+      - agira-jobs:/data/jobs
+      # Memory store persistence
+      - agira-memory:/data
+      # Read-only agira source
+      - ./agira:/app/agira:ro
+      - ./scripts:/app/scripts:ro
+      - ./examples:/app/examples:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - AGIRA_PROJECT_ROOT=/app
+      - AGIRA_JOBS_DIR=/data/jobs
+      - AGIRA_MEMORY_PATH=/data/memory_store.json
+      - AGIRA_SETTINGS_PATH=/data/settings.json
+      # API authentication
+      - API_KEY=${API_KEY:-}
+      # GitHub token (optional — for PR creation)
+      - GH_TOKEN=${GH_TOKEN:-}
+    networks:
+      - agira-net
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Security: run as non-root, no capabilities
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ── Agira Sandbox (Isolated Code Execution) ────────────────────────────────
+  # Purpose-built container for running untrusted user code (tests, linters).
+  # NOT exposed externally. Spawned by the orchestrator with strict limits.
+  agira-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: sandbox
+    image: agira/sandbox:${IMAGE_TAG:-latest}
+    container_name: agira-sandbox
+    restart: "no"
+    # Runs with no network, read-only root, minimal resources
+    network_mode: none
+    # Read-only root filesystem (copied repo mounted as :ro)
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    volumes:
+      - agira-jobs:/data/jobs:ro
+    # No environment variables — sandbox gets everything via command args
+    # Resource limits enforced
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+      - seccomp:builtin
+    # No USER directive — runs as root inside container (but container has no network)
+
+  # ── Next.js Frontend (Vercel-recommended, or standalone) ──────────────────
+  # For self-hosted production, use this. For Vercel, deploy frontend/ directly.
+  agira-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    image: agira/frontend:${IMAGE_TAG:-latest}
+    container_name: agira-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE:-}
+      - API_KEY=${API_KEY:-}
+      # Jobs dir must be accessible to read results
+      - AGIRA_JOBS_DIR=/data/jobs
+    volumes:
+      - agira-jobs:/data/jobs:ro
+      - agira-memory:/data:ro
+    depends_on:
+      agira-backend:
+        condition: service_healthy
+    networks:
+      - agira-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # Security
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+volumes:
+  agira-jobs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${AGIRA_JOBS_DIR:-./.agira-jobs}
+  agira-memory:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${AGIRA_MEMORY_DIR:-./.agira-memory}
+
+networks:
+  agira-net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
