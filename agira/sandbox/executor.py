@@ -1,7 +1,14 @@
-"""Safe subprocess execution sandbox."""
+"""Safe subprocess execution sandbox.
+
+Production enforcement:
+    AGIRA_SANDBOX_MODE must be set to "docker" in production.
+    If not set, the system fails fast with a clear error message.
+    No fallback to bare subprocess.run() in production builds.
+"""
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -32,8 +39,24 @@ class SandboxResult:
         }
 
 
+# Sentinel for unconfigured mode
+_UNSET = object()
+
+
 class SandboxExecutor:
-    """Deterministic subprocess wrapper with timeout and output capture."""
+    """Deterministic subprocess wrapper with timeout and output capture.
+
+    Production mode (AGIRA_SANDBOX_MODE=docker):
+        All commands execute inside a security-hardened Docker container
+        via scripts/sandbox_runner.py, with:
+            --network=none  --read-only  --tmpfs /tmp
+            --memory=256m   --pids-limit=64  --cap-drop=ALL
+            --no-new-privileges  -u 1000:1000
+
+    If AGIRA_SANDBOX_MODE is not set to "docker", the executor raises
+    RuntimeError immediately — there is no fallback subprocess path in
+    production. This enforces sandbox isolation at the execution layer.
+    """
 
     def __init__(self, default_timeout: float = 120.0) -> None:
         self.default_timeout = default_timeout
@@ -46,33 +69,79 @@ class SandboxExecutor:
         timeout: float | None = None,
         env: dict[str, str] | None = None,
     ) -> SandboxResult:
+        sandbox_mode = os.environ.get("AGIRA_SANDBOX_MODE", "").strip()
+
+        if sandbox_mode != "docker":
+            raise RuntimeError(
+                f"SANDBOX ISOLATION REQUIRED IN PRODUCTION.\n"
+                f"Set AGIRA_SANDBOX_MODE=docker to enable Docker-based sandbox.\n"
+                f"Current value: '{sandbox_mode or '(not set)'}'.\n"
+                f"No host-level subprocess execution is permitted in production."
+            )
+
+        return self._run_via_sandbox_runner(command, cwd=cwd, timeout=timeout, env=env)
+
+    def _run_via_sandbox_runner(
+        self,
+        command: list[str],
+        *,
+        cwd: str | Path | None = None,
+        timeout: float | None = None,
+        env: dict[str, str] | None = None,
+    ) -> SandboxResult:
+        """Execute via scripts/sandbox_runner.py — Docker sandbox only.
+
+        The sandbox_runner.py script is invoked as a subprocess. It accepts
+        the target command as positional arguments after a "--" separator
+        and runs everything inside a security-hardened container.
+        """
         import time
 
         timeout = timeout or self.default_timeout
         start = time.monotonic()
+
+        image = os.environ.get(
+            "AGIRA_SANDBOX_IMAGE",
+            "ghcr.io/akhileshdasari2004/hackthon1/sandbox:latest",
+        )
+
+        # Build the sandbox_runner.py invocation
+        # The target command is appended after "--"
+        sandbox_cmd = [
+            sys.executable,
+            str(Path(__file__).parent.parent / "scripts" / "sandbox_runner.py"),
+            "--timeout", str(int(timeout)),
+            "--image", image,
+        ]
+        if cwd:
+            sandbox_cmd.extend(["--workdir", str(cwd)])
+        sandbox_cmd.append("--")
+        sandbox_cmd.extend(command)
+
         try:
             proc = subprocess.run(
-                command,
-                cwd=str(cwd) if cwd else None,
+                sandbox_cmd,
                 capture_output=True,
                 text=True,
-                timeout=timeout,
+                timeout=timeout + 10,  # outer timeout slightly larger than sandbox's
                 env=env,
             )
             duration = (time.monotonic() - start) * 1000
+            timed_out = "Timed out after" in proc.stderr
             return SandboxResult(
                 command=command,
-                returncode=proc.returncode,
+                returncode=proc.returncode if not timed_out else -1,
                 stdout=proc.stdout,
                 stderr=proc.stderr,
+                timed_out=timed_out,
                 duration_ms=duration,
             )
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
             duration = (time.monotonic() - start) * 1000
             raise AgiraTimeoutError(
-                f"Command timed out after {timeout}s: {' '.join(command)}",
+                f"Sandbox outer timeout after {timeout + 10}s: {' '.join(command)}",
                 details={"command": command, "duration_ms": duration},
-            ) from exc
+            ) from None
 
     def run_python(
         self,

@@ -89,11 +89,24 @@ def print_dag_structure() -> None:
 
 
 def run_demo(repo_path: Path) -> None:
-    """Run the full demo pipeline."""
+    """Run the full demo pipeline.
+    
+    Sandbox enforcement: AGIRA_SANDBOX_MODE must be set to 'docker' for any
+    pipeline that executes user code (tests, lint, etc.). The demo explicitly
+    sets this to ensure production-like behavior during demo runs.
+    """
+    import os
     from agira.orchestrator.engine import Orchestrator
     from agira.registry.registry import create_registry
     from agira.utils import get_execution_logger, reset_execution_logger
     from agira.report import build_report_from_orchestrator
+
+    # Enforce sandbox mode — no host-level subprocess execution permitted
+    sandbox_mode = os.environ.get("AGIRA_SANDBOX_MODE", "").strip()
+    if sandbox_mode != "docker":
+        print(f"\n{YELLOW}⚠ WARNING: AGIRA_SANDBOX_MODE is not set to 'docker'.{RESET}")
+        print(f"  Sandbox enforcement is active — setting AGIRA_SANDBOX_MODE=docker")
+        os.environ["AGIRA_SANDBOX_MODE"] = "docker"
 
     # Reset logger for fresh run
     reset_execution_logger()
