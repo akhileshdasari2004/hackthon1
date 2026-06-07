@@ -135,14 +135,18 @@ def main() -> int:
         result = orch.run(work_dir, mode="demo")
         logger.end_execution()
 
-        report = build_report_from_orchestrator(result, logger, memory_store=orch._memory)
+        # Extract issues from artifact store after run completes
+        issues_art = result.context.artifact_store.latest("issues")
+        classified_issues = []
+        if issues_art:
+            data = issues_art.data
+            raw_issues = data.get("issues", data) if isinstance(data, dict) else data
+            classified_issues = raw_issues if isinstance(raw_issues, list) else []
+
+        report = build_report_from_orchestrator(result, logger, memory_store=orch._memory, issues=classified_issues)
         timeline = logger.to_dict()
 
-        patches = result.context.patches_applied
-        issues_art = result.context.artifact_store.latest("issues")
-        issues = []
-        if issues_art and isinstance(issues_art.data, dict):
-            issues = issues_art.data.get("issues", [])
+        patches = result.context.patches_applied or []
 
         validation_art = result.context.artifact_store.latest("validation_result")
         validation = validation_art.data if validation_art else {}
@@ -158,7 +162,7 @@ def main() -> int:
             "duration_ms": round((time.time() - start) * 1000, 2),
             "report": report.to_dict(),
             "timeline": timeline,
-            "issues": issues,
+            "issues": classified_issues,
             "patches": patches,
             "validation": validation,
             "health_score": health_score,
