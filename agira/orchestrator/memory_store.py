@@ -163,7 +163,7 @@ class MemoryStore:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "data": data,
             })
-            # Keep last 500 entries
+            # Keep last 500 entries — truncate BEFORE save to avoid writing excess
             if len(self._cache["learning_log"]) > 500:
                 self._cache["learning_log"] = self._cache["learning_log"][-500:]
             self._save()

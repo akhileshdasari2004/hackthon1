@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from agira.subagents.base import AgentState, BaseSubagent, SubagentResult
 from agira.tools.context import ExecutionContext
+from agira.utils.fixability import classify_issues
 
 
 class BugHunterAgent(BaseSubagent):
@@ -46,7 +48,7 @@ class BugHunterAgent(BaseSubagent):
                 return tool, params
 
         if "repo_tools.search_code" not in done:
-            hypotheses = ["except:", "def safe_divide", "eval(", "pickle.loads"]
+            hypotheses = ["except:", "return a / b", "def safe_divide", "eval(", "pickle.loads"]
             for h in hypotheses:
                 if h not in state.hypotheses:
                     state.hypotheses.append(h)
@@ -93,13 +95,17 @@ class BugHunterAgent(BaseSubagent):
             if key not in seen:
                 seen.add(key)
                 deduped.append(issue)
-        result.issues = deduped
+        # Classify issues with fixability
+        result.issues = classify_issues(deduped)
         result.analysis = {"total_issues": len(deduped), "tools_used": len(state.observations)}
         result.success = len(issues) >= 1 or len(state.observations) >= 5
         return result
 
 
 def _match_to_pattern(text: str) -> str | None:
+    # Division-by-zero: division in a return/immediate context without guard
+    if re.search(r'\s/\s\w+', text) or '/' in text:
+        return "division_by_zero"
     if "safe_divide" in text:
         return "division_by_zero"
     if "eval(" in text:

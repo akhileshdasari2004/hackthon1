@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agira.utils.fixability import Fixability, summarize_fixability
+
 
 @dataclass
 class FinalReport:
@@ -29,6 +31,12 @@ class FinalReport:
     failure_recoveries: list[str] = field(default_factory=list)
     plugins_executed: list[str] = field(default_factory=list)
     node_details: list[dict[str, Any]] = field(default_factory=list)
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    fixability_summary: dict[str, Any] = field(default_factory=dict)
+    # Repair metrics
+    repair_metrics: dict[str, Any] = field(default_factory=dict)
+    # Developer report sections
+    developer_report: dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -53,6 +61,10 @@ class FinalReport:
             "failure_recoveries": self.failure_recoveries,
             "plugins_executed": self.plugins_executed,
             "node_details": self.node_details,
+            "issues": self.issues,
+            "fixability_summary": self.fixability_summary,
+            "repair_metrics": self.repair_metrics,
+            "developer_report": self.developer_report,
             "timestamp": self.timestamp,
         }
 
@@ -105,6 +117,67 @@ class FinalReport:
                 status = nd.get("status", "unknown")
                 print(f"  {nd.get('name', ''):<30} {status:>10} {duration:>12}")
 
+        if self.fixability_summary:
+            print(f"\n  ISSUES FOUND:")
+            fs = self.fixability_summary
+            total = fs.get("total", 0)
+            auto_fix = fs.get("auto_fixable", 0)
+            review_req = fs.get("review_required", 0)
+            arch = fs.get("architectural", 0)
+            unsupported = fs.get("unsupported", 0)
+            print(f"    Total Issues:        {total}")
+            print(f"    Auto Fixable:        {auto_fix}")
+            print(f"    Review Required:     {review_req}")
+            print(f"    Architectural:       {arch}")
+            print(f"    Unsupported:         {unsupported}")
+
+        if self.repair_metrics:
+            print(f"\n  REPAIR METRICS:")
+            rm = self.repair_metrics
+            print(f"    Issues Found:        {rm.get('issues_found', 0)}")
+            print(f"    Auto Fixable:        {rm.get('auto_fixable', 0)}")
+            print(f"    Patch Attempts:      {rm.get('patch_attempts', 0)}")
+            print(f"    Validated Patches:   {rm.get('validated_patches', 0)}")
+            print(f"    Failed Patches:      {rm.get('failed_patches', 0)}")
+            print(f"    Rollbacks:           {rm.get('rollbacks', 0)}")
+            print(f"    Repair Rate:         {rm.get('repair_rate', 0)}%")
+            print(f"    Validation Rate:     {rm.get('validation_rate', 0)}%")
+
+        if self.developer_report:
+            dr = self.developer_report
+            print(f"\n  DEVELOPER REPORT:")
+            
+            # Repository Health
+            rh = dr.get('repository_health', {})
+            print(f"\n  1. Repository Health:")
+            print(f"     Health Score:       {rh.get('health_score', 'N/A')} ({rh.get('health_grade', 'N/A')})")
+            print(f"     Issues Found:       {rh.get('issues_found', 0)}")
+            print(f"     Auto-Fixable:       {rh.get('auto_fixable_count', 0)}")
+            
+            # Auto-Fix Summary with Developer Impact
+            afs = dr.get('auto_fix_summary', {})
+            print(f"\n  6. Auto-Fix Summary:")
+            print(f"     Fixes Applied:      {afs.get('fixes_applied', 0)}")
+            print(f"     Manual Fixes Avoided: {afs.get('manual_fixes_avoided', 0)}")
+            print(f"     Files Cleaned:      {afs.get('files_cleaned', 0)}")
+            print(f"     Failed:             {afs.get('failed', 0)}")
+            print(f"     Validation Success: {afs.get('validation_success_rate', 0)}%")
+            print(f"     Time Saved:         {afs.get('estimated_time_saved_minutes', 0)} min ({afs.get('estimated_time_saved_hours', 0)} hrs)")
+            
+            # Developer Value
+            dv = dr.get('developer_value', {})
+            print(f"\n  10. Developer Value:")
+            print(f"     Time Saved:         {dv.get('time_saved_minutes', 0)} min ({dv.get('time_saved_hours', 0)} hrs)")
+            print(f"     Manual Fixes Avoided: {dv.get('manual_fixes_avoided', 0)}")
+            print(f"     Files Cleaned:      {dv.get('files_cleaned', 0)}")
+            
+            # Top Risk Files
+            trf = dr.get('top_risk_files', [])
+            if trf:
+                print(f"\n  9. Top Risk Files:")
+                for item in trf[:3]:
+                    print(f"     {item.get('file', '?'):<30} {item.get('issue_count', 0)} issues")
+
         print("\n" + "═" * 60)
         self._print_verdict()
         print("═" * 60 + "\n")
@@ -126,8 +199,16 @@ def build_report_from_orchestrator(
     result: Any,
     execution_logger: Any,
     memory_store: Any = None,
+    issues: list[dict[str, Any]] | None = None,
 ) -> FinalReport:
-    """Build a FinalReport from an OrchestratorResult and ExecutionLogger."""
+    """Build a FinalReport from an OrchestratorResult and ExecutionLogger.
+
+    Args:
+        result: OrchestratorResult from the execution
+        execution_logger: ExecutionLogger instance
+        memory_store: Optional MemoryStore for memory influence logging
+        issues: Optional list of issues to classify and summarize
+    """
     report = FinalReport()
 
     plan = result.plan
@@ -201,5 +282,16 @@ def build_report_from_orchestrator(
 
     # Plugins
     report.plugins_used = len(report.plugins_executed) > 0
+
+    # Issues and fixability classification
+    if issues:
+        report.issues = issues
+        report.fixability_summary = summarize_fixability(issues)
+
+    # Collect repair metrics and developer report from context
+    # Import lazily to avoid circular imports
+    from agira.tools.report_tools import _collect_repair_metrics, _collect_developer_report
+    report.repair_metrics = _collect_repair_metrics(ctx)
+    report.developer_report = _collect_developer_report(ctx, issues)
 
     return report

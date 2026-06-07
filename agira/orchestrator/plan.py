@@ -105,6 +105,10 @@ class ExecutionPlan:
     def checkpoint(self, label: str) -> None:
         self.last_checkpoint = label
 
+    def completed_node_ids(self) -> set[str]:
+        """Return set of node IDs with COMPLETED status."""
+        return {nid for nid, n in self.nodes.items() if n.status == NodeStatus.COMPLETED}
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "plan_id": self.plan_id,

@@ -33,7 +33,7 @@ class PatchResult:
 
 class ASTPatcher:
     """Apply structured AST transformations with diff generation.
-    
+
     Uses source-based transformations for determinism.
     AST is used only for detection/validation, not code generation.
     """
@@ -64,7 +64,7 @@ class ASTPatcher:
         """Fix bare except clauses using source-based transformation."""
         path = self._resolve(file_path)
         old = path.read_text(encoding="utf-8")
-        
+
         # Detect bare except using AST
         try:
             tree = ast.parse(old, filename=str(path))
@@ -76,10 +76,10 @@ class ASTPatcher:
         for node in ast.walk(tree):
             if isinstance(node, ast.ExceptHandler) and node.type is None:
                 bare_excepts.append(node)
-        
+
         if not bare_excepts:
             return PatchResult(False, file_path, "", old, old, "no bare except found", "bare_except")
-        
+
         lines = old.splitlines(keepends=True)
         # Process in reverse order to preserve line numbers
         for handler in reversed(bare_excepts):
@@ -95,23 +95,23 @@ class ASTPatcher:
                         lines[i] = ' ' * indent + 'except Exception:' + trailing
                         break
         new = ''.join(lines)
-        
+
         if new == old:
             return PatchResult(False, file_path, "", old, old, "could not apply fix", "bare_except")
-        
+
         err = self._validate_python(new, path)
         if err:
             return PatchResult(False, file_path, "", old, new, err, "bare_except")
-        
+
         return PatchResult(True, file_path, self._make_diff(path, old, new), old, new, fix_type="bare_except")
 
     def fix_division_by_zero(self, file_path: str, issue: dict) -> PatchResult:
         """Fix potential division by zero using source-based transformation."""
         path = self._resolve(file_path)
         old = path.read_text(encoding="utf-8")
-        
+
         target_fn = issue.get("function", "")
-        
+
         # Find the function using AST
         try:
             tree = ast.parse(old, filename=str(path))
@@ -125,24 +125,24 @@ class ASTPatcher:
                 if not target_fn or node.name == target_fn:
                     func_node = node
                     break
-        
+
         if not func_node:
             return PatchResult(False, file_path, "", old, old, f"function {target_fn or 'any'} not found", "division_by_zero")
-        
+
         # Use source-based replacement for division operations
         new = old
-        
+
         # Pattern to find: return a / b or return a / b if ... else ...
         # We need to be careful to only fix divisions inside the target function
         # This is a simplified approach - find the function's line range
         func_lines = new.splitlines(keepends=True)
         func_start = func_node.lineno - 1
         func_end = func_node.end_lineno if hasattr(func_node, 'end_lineno') else len(func_lines)
-        
+
         # Look for division in return statements within function
         # Pattern: something / something
         div_pattern = re.compile(r'(\w+)\s*/\s*(\w+)')
-        
+
         for i in range(func_start, min(func_end, len(func_lines))):
             line = func_lines[i]
             # Skip if it's already handled
@@ -154,11 +154,13 @@ class ASTPatcher:
                 # Simple heuristic: line contains "return" and "/"
                 # For now, we'll be conservative and only fix simple patterns
                 pass  # Conservative approach - let the pattern matching be more precise
-        
+
         # More precise approach: find "return a / b" patterns
         # and replace with "return a / b if b != 0 else 0"
-        simple_return_div = re.compile(r'\b(return\s+\w+\s*/\s*\w+)\b')
-        
+        # Uses trailing \s* to handle trailing whitespace after divisor
+        # Uses [\w.]+ to handle attribute access like self.x / y
+        simple_return_div = re.compile(r'\b(return\s+[\w.]+\s*/\s*[\w.]+)\s*\b')
+
         def replace_div(m):
             expr = m.group(1)
             # Extract the dividend and divisor
@@ -168,16 +170,16 @@ class ASTPatcher:
                 divisor = parts[1].strip()
                 return f"return {dividend} / {divisor} if {divisor} != 0 else 0"
             return expr
-        
+
         new = simple_return_div.sub(replace_div, new)
-        
+
         if new == old:
             return PatchResult(False, file_path, "", old, old, "no change produced", "division_by_zero")
-        
+
         err = self._validate_python(new, path)
         if err:
             return PatchResult(False, file_path, "", old, new, err, "division_by_zero")
-        
+
         return PatchResult(True, file_path, self._make_diff(path, old, new), old, new, fix_type="division_by_zero")
 
     def fix_unused_import(self, file_path: str, issue: dict) -> PatchResult:
@@ -185,31 +187,31 @@ class ASTPatcher:
         path = self._resolve(file_path)
         old = path.read_text(encoding="utf-8")
         import_name = issue.get("import", "")
-        
+
         if not import_name:
             return PatchResult(False, file_path, "", old, old, "no import specified", "unused_import")
 
         new = old
-        
+
         # Handle: import foo -> remove entire line
         import_line_pattern = re.compile(rf'^import\s+{re.escape(import_name)}\s*(?:#.*)?$', re.MULTILINE)
         new = import_line_pattern.sub('', new)
-        
+
         # Handle: from x import foo -> remove just foo from the import
         from_import_pattern = re.compile(rf',?\s*{re.escape(import_name)}\s*(?:#.*)?(?=\s*$)', re.MULTILINE)
         new = from_import_pattern.sub('', new)
-        
-        # Clean up empty from imports: from x import 
+
+        # Clean up empty from imports: from x import
         empty_from_import = re.compile(r'^from\s+\S+\s+import\s*$', re.MULTILINE)
         new = empty_from_import.sub('', new)
-        
+
         if new == old:
             return PatchResult(False, file_path, "", old, old, "no change", "unused_import")
-        
+
         err = self._validate_python(new, path)
         if err:
             return PatchResult(False, file_path, "", old, new, err, "unused_import")
-        
+
         return PatchResult(True, file_path, self._make_diff(path, old, new), old, new, fix_type="unused_import")
 
     def fix_eval_usage(self, file_path: str, issue: dict) -> PatchResult:
@@ -217,7 +219,7 @@ class ASTPatcher:
         path = self._resolve(file_path)
         old = path.read_text(encoding="utf-8")
         new = old.replace("eval(", "ast.literal_eval(")
-        
+
         if "ast.literal_eval(" in new and "import ast" not in new:
             # Add import ast at the top
             if new.startswith("#!"):
@@ -227,36 +229,36 @@ class ASTPatcher:
                     new = new[:first_newline+1] + "import ast\n" + new[first_newline+1:]
             else:
                 new = "import ast\n" + new
-        
+
         if new == old:
             return PatchResult(False, file_path, "", old, old, "no change", "eval_usage")
-        
+
         err = self._validate_python(new, path)
         if err:
             return PatchResult(False, file_path, "", old, new, err, "eval_usage")
-        
+
         return PatchResult(True, file_path, self._make_diff(path, old, new), old, new, fix_type="eval_usage")
 
     def fix_hardcoded_secret(self, file_path: str, issue: dict) -> PatchResult:
         """Replace hardcoded secrets with environment variable lookups."""
         path = self._resolve(file_path)
         old = path.read_text(encoding="utf-8")
-        
+
         # Pattern to match: API_KEY = 'value' or password = "secret" etc.
         # We look for common secret patterns and replace with os.environ.get()
         secret_pattern = re.compile(
             r'(?i)(API_KEY|password|token|secret)\s*=\s*[\'"]([^\'"]+)[\'"]'
         )
-        
+
         def replace_secret(m):
             name = m.group(1).upper()
             return f'{name} = os.environ.get("{name}", "")'
-        
+
         new = secret_pattern.sub(replace_secret, old)
-        
+
         if new == old:
             return PatchResult(False, file_path, "", old, old, "no change", "hardcoded_secret")
-        
+
         # Add import os if not present
         if "import os" not in new:
             if new.startswith("#!"):
@@ -265,11 +267,11 @@ class ASTPatcher:
                     new = new[:first_newline+1] + "import os\n" + new[first_newline+1:]
             else:
                 new = "import os\n" + new
-        
+
         err = self._validate_python(new, path)
         if err:
             return PatchResult(False, file_path, "", old, new, err, "hardcoded_secret")
-        
+
         return PatchResult(True, file_path, self._make_diff(path, old, new), old, new, fix_type="hardcoded_secret")
 
     def fix_pickle_load(self, file_path: str, issue: dict) -> PatchResult:
@@ -277,14 +279,14 @@ class ASTPatcher:
         path = self._resolve(file_path)
         old = path.read_text(encoding="utf-8")
         new = old.replace("pickle.loads", "# pickle.loads disabled for security")
-        
+
         if new == old:
             return PatchResult(False, file_path, "", old, old, "no change", "pickle_load")
-        
+
         err = self._validate_python(new, path)
         if err:
             return PatchResult(False, file_path, "", old, new, err, "pickle_load")
-        
+
         return PatchResult(True, file_path, self._make_diff(path, old, new), old, new, fix_type="pickle_load")
 
     def apply(self, file_path: str, fix_type: str, issue: dict | None = None) -> PatchResult:

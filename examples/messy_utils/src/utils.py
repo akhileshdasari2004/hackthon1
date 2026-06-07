@@ -1,6 +1,6 @@
 """Utility module with style issues."""
 import os
-import sys
+
 import json
 
 

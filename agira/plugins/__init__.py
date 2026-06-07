@@ -116,8 +116,10 @@ class PluginRegistry:
                             ):
                                 self.register(attr())
                                 loaded += 1
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        # Plugin file failed to load — report but continue
+                        import sys as _sys
+                        print(f"[agira] plugin skip {py_file.name}: {exc}", file=_sys.stderr)
         return loaded
 
 

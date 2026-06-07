@@ -320,6 +320,8 @@ class Orchestrator:
             self._save_checkpoint(plan, ctx)
             logger.log_node_end(node.name, batch_id, "completed")
             demo_print(f"[DEBUG] Node {node.name} completed")
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as exc:
             log_event(_logger, "node_failed", node=node.name, error=str(exc))
             demo_print(f"[DEBUG] Node {node.name} failed: {exc}")

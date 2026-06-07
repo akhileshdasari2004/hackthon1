@@ -41,6 +41,8 @@ class ExecutionStateMachine:
             node.completed_at = datetime.now(timezone.utc).isoformat()
             return artifact_id
 
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as exc:
             node.retry_count += 1
             node.error = str(exc)

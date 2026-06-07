@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import difflib
 import re
-import shutil
 from pathlib import Path
 
 from agira.registry.base import ToolDefinition, ToolSchema
@@ -214,7 +213,7 @@ def register_patch_tools() -> list[ToolDefinition]:
     )
 
     def ast_apply_fix(params: dict, ctx: ExecutionContext) -> dict:
-        from agira.patch.ast_patcher import ASTPatcher
+        from agira.patch.ast_patcher import ASTPatcher, PatchResult
 
         file_path = params["file"]
         fix_type = params["fix_type"]
@@ -227,10 +226,8 @@ def register_patch_tools() -> list[ToolDefinition]:
         if fix_type == "pickle_load":
             old = path.read_text(encoding="utf-8")
             new = old.replace("pickle.loads", "# pickle.loads  # disabled for security")
-            result = patcher.fix_bare_except(file_path, issue)  # placeholder validate
-            from agira.patch.ast_patcher import PatchResult
-            import ast as ast_mod
             try:
+                import ast as ast_mod
                 ast_mod.parse(new)
                 result = PatchResult(True, file_path, patcher._make_diff(path, old, new), old, new, fix_type="pickle_load")
             except SyntaxError as e:

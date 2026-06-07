@@ -120,11 +120,20 @@ def run_demo(repo_path: Path) -> None:
 
     logger.end_execution()
 
+    # Extract issues from artifact store for reporting
+    issues_art = result.context.artifact_store.latest("issues")
+    if issues_art:
+        data = issues_art.data
+        issues = data.get("issues", data) if isinstance(data, dict) else data
+    else:
+        issues = None
+
     # Build and display report
     report = build_report_from_orchestrator(
         result,
         logger,
         memory_store=orch._memory,
+        issues=issues,
     )
 
     # Print timeline

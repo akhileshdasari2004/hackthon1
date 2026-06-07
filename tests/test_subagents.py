@@ -34,5 +34,8 @@ def test_bug_hunter_finds_issues():
     agent = get_subagent("BugHunterAgent")
     result = agent.run({}, ctx)
     patterns = {i.get("pattern") for i in result.get("issues", [])}
-    assert "bare_except" in patterns or "division_by_zero" in patterns
+    # buggy_calculator has two issues:
+    #   1. division_by_zero: safe_divide does a / b without zero check
+    #   2. wrong_except: divide uses 'except Exception:' (qualified, not bare)
+    assert "division_by_zero" in patterns or "wrong_except" in patterns or "bare_except" in patterns
     assert len(result.get("issues", [])) >= 1

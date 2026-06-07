@@ -199,6 +199,7 @@ def register_analysis_tools() -> list[ToolDefinition]:
         anti_patterns = []
         checks = {
             "bare_except": (r"except\s*:", "Bare except clause"),
+            "wrong_except": (r"except\s+\w+\s*:", "Except clause with bare Exception type (use 'as')"),
             "mutable_default": (r"def\s+\w+\([^)]*=\s*(\[\]|\{\})", "Mutable default argument"),
             "print_debug": (r"print\s*\([^)]*debug", "Debug print statement"),
             "todo_fixme": (r"(TODO|FIXME|HACK|XXX)", "Unresolved TODO/FIXME"),

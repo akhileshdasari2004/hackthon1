@@ -74,11 +74,3 @@ class DAGRepair:
         skipped = {nid for nid, n in self.plan.nodes.items() if n.status == NodeStatus.SKIPPED}
         satisfied = completed | skipped
         return all(dep in satisfied for dep in node.depends_on)
-
-
-# Monkey-patch onto ExecutionPlan for convenience
-def completed_node_ids(self) -> set[str]:
-    return {nid for nid, n in self.nodes.items() if n.status == NodeStatus.COMPLETED}
-
-
-ExecutionPlan.completed_node_ids = completed_node_ids

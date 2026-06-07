@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #09090b;
+  --primary: #09090b;
+  --primary-foreground: #fafafa;
+  --secondary: #71717a;
+  --secondary-foreground: #09090b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #09090b;
+  --border: #e4e4e7;
+  --surface: #fafafa;
+  --gradient-from: #fafafa;
+  --gradient-to: #ffffff;
+  --glow: rgba(9, 9, 11, 0.04);
+  --section-bg: #09090b;
+  --section-fg: #fafafa;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #09090b;
+  --secondary: #a1a1aa;
+  --secondary-foreground: #fafafa;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --border: #27272a;
+  --surface: #18181b;
+  --gradient-from: #09090b;
+  --gradient-to: #18181b;
+  --glow: rgba(250, 250, 250, 0.06);
+  --section-bg: #09090b;
+  --section-fg: #fafafa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.diff-added {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.diff-removed {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.dark .diff-added {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.dark .diff-removed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+@keyframes theme-icon-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes progress-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.animate-progress {
+  animation: progress-bar 1.5s ease-in-out infinite;
+}
+
+.landing-gradient {
+  background: linear-gradient(180deg, var(--gradient-from) 0%, var(--gradient-to) 100%);
+}
+
+.landing-glow {
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, var(--glow), transparent);
+}
+
+.landing-metrics {
+  background: var(--section-bg, #09090b);
+  color: var(--section-fg, #fafafa);
+}
