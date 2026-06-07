@@ -10,3 +10,5 @@ build/
 .kimchi/
 output/
 *.log
+.agira-jobs/
+.agira-history.json
