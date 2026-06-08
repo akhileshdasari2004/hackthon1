@@ -18,17 +18,21 @@ Usage (standalone):
 Environment:
     AGIRA_SANDBOX_IMAGE   Docker image for sandbox (default: agira/sandbox:latest)
     AGIRA_SANDBOX_TIMEOUT Max execution time in seconds (default: 120)
+    AGIRA_JOB_ID          Job ID for audit correlation
+    AGIRA_NODE_NAME       DAG node name for audit correlation
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -40,6 +44,10 @@ class SandboxResult:
     stderr: str
     timed_out: bool
     duration_ms: float
+    job_id: str = ""
+    node: str = ""
+    trace_id: str = ""
+    image: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -50,6 +58,10 @@ class SandboxResult:
             "timed_out": self.timed_out,
             "duration_ms": self.duration_ms,
             "success": self.returncode == 0 and not self.timed_out,
+            "job_id": self.job_id,
+            "node": self.node,
+            "trace_id": self.trace_id,
+            "image": self.image,
         }
 
 
@@ -75,6 +87,11 @@ def run_in_docker(
     """
     start = time.monotonic()
     timed_out = False
+
+    # Capture audit correlation IDs from environment
+    job_id = os.environ.get("AGIRA_JOB_ID", "")
+    node = os.environ.get("AGIRA_NODE_NAME", "")
+    trace_id = os.environ.get("AGIRA_TRACE_ID", "")
 
     cmd = [
         "docker", "run",
@@ -109,14 +126,52 @@ def run_in_docker(
 
     duration_ms = (time.monotonic() - start) * 1000
 
-    return SandboxResult(
+    result = SandboxResult(
         command=" ".join(command),
         returncode=returncode,
         stdout=proc.stdout if not timed_out else "",
         stderr=proc.stderr if not timed_out else f"Timed out after {timeout}s",
         timed_out=timed_out,
         duration_ms=duration_ms,
+        job_id=job_id,
+        node=node,
+        trace_id=trace_id,
+        image=image,
     )
+
+    # Write audit log entry
+    _write_audit_log(result)
+
+    return result
+
+
+def _write_audit_log(result: SandboxResult) -> None:
+    """Write audit log entry to /data/audit.log."""
+    audit_path = os.environ.get("AGIRA_AUDIT_PATH", "/data/audit.log")
+    if not audit_path:
+        return
+    try:
+        audit_dir = os.path.dirname(audit_path)
+        if audit_dir:
+            os.makedirs(audit_dir, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "job_id": result.job_id,
+            "node": result.node,
+            "command": result.command,
+            "image": result.image,
+            "status": "timeout" if result.timed_out else ("success" if result.returncode == 0 else "failed"),
+            "exit_code": result.returncode,
+            "duration_ms": round(result.duration_ms, 2),
+            "trace_id": result.trace_id,
+        }
+        # Filter empty strings
+        entry = {k: v for k, v in entry.items() if v}
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+            f.flush()
+    except Exception:
+        pass  # Never fail due to audit logging
 
 
 def main() -> int:

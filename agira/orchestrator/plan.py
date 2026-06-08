@@ -35,6 +35,9 @@ class PlanNode:
     error: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
+    start_time_ms: float | None = None  # Wall-clock start in ms
+    end_time_ms: float | None = None    # Wall-clock end in ms
+    duration_ms: float | None = None    # Computed duration
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,7 +51,13 @@ class PlanNode:
             "input_artifact_ids": self.input_artifact_ids,
             "output_artifact_id": self.output_artifact_id,
             "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
             "error": self.error,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "start_time_ms": self.start_time_ms,
+            "end_time_ms": self.end_time_ms,
+            "duration_ms": self.duration_ms,
         }
 
 
@@ -144,6 +153,12 @@ class ExecutionPlan:
                 input_artifact_ids=raw.get("input_artifact_ids", []),
                 output_artifact_id=raw.get("output_artifact_id"),
                 retry_count=raw.get("retry_count", 0),
+                max_retries=raw.get("max_retries", 2),
                 error=raw.get("error"),
+                started_at=raw.get("started_at"),
+                completed_at=raw.get("completed_at"),
+                start_time_ms=raw.get("start_time_ms"),
+                end_time_ms=raw.get("end_time_ms"),
+                duration_ms=raw.get("duration_ms"),
             )
         return plan

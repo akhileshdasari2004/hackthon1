@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ class ExecutionStateMachine:
     ) -> str | None:
         node.status = NodeStatus.RUNNING
         node.started_at = datetime.now(timezone.utc).isoformat()
+        node.start_time_ms = time.perf_counter() * 1000
 
         try:
             if node.action_type == "tool":
@@ -39,9 +41,13 @@ class ExecutionStateMachine:
             node.output_artifact_id = artifact_id
             node.status = NodeStatus.COMPLETED
             node.completed_at = datetime.now(timezone.utc).isoformat()
+            node.end_time_ms = time.perf_counter() * 1000
+            node.duration_ms = round(node.end_time_ms - node.start_time_ms, 2) if node.start_time_ms else None
             return artifact_id
 
         except (KeyboardInterrupt, SystemExit):
+            node.end_time_ms = time.perf_counter() * 1000
+            node.duration_ms = round(node.end_time_ms - node.start_time_ms, 2) if node.start_time_ms else None
             raise
         except Exception as exc:
             node.retry_count += 1
@@ -53,6 +59,8 @@ class ExecutionStateMachine:
                 raise
             node.status = NodeStatus.FAILED
             node.completed_at = datetime.now(timezone.utc).isoformat()
+            node.end_time_ms = time.perf_counter() * 1000
+            node.duration_ms = round(node.end_time_ms - node.start_time_ms, 2) if node.start_time_ms else None
             return None
 
     def _resolve_input_artifacts(self, node: PlanNode, ctx: ExecutionContext) -> list[str]:
